@@ -1,0 +1,71 @@
+services:
+  # 1. Aggregator: Menerima event HTTP & memproses queue
+  aggregator:
+    build: ./aggregator
+    container_name: uas_aggregator
+    depends_on:
+      - broker
+      - storage
+    environment:
+      - DATABASE_URL=postgresql://user:password@storage:5432/events_db
+      - BROKER_URL=redis://broker:6379/0
+    ports:
+      - "8080:8080"
+    networks:
+      - backend-net
+
+  # 2. Publisher: Mengirim event dummy (termasuk duplikat)
+  publisher:
+    build: ./publisher
+    container_name: uas_publisher
+    depends_on:
+      - aggregator
+    environment:
+      - TARGET_URL=http://aggregator:8080/publish
+      - DELAY=0.01         
+      - DUPLICATION_RATE=0.3
+    networks:
+      - backend-net
+
+  # 3. Broker: Redis untuk antrian pesan (Pub/Sub atau Queue)
+  broker:
+    image: redis:7-alpine
+    container_name: broker
+    ports:
+      - "6379:6379" # Opsional: dibuka host untuk debug, di prod tutup
+    volumes:
+      - broker_data:/data
+    networks:
+      - backend-net
+
+  # 4. Storage: Postgres untuk persistensi & deduplikasi
+  storage:
+    image: postgres:16-alpine
+    container_name: storage
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=events_db
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - backend-net
+
+  tester:
+    build: ./tests
+    container_name: tester
+    depends_on:
+      - aggregator
+    networks:
+      - backend-net
+    profiles: ["testing"]
+
+# Definisi Network (Isolasi)
+networks:
+  backend-net:
+    driver: bridge
+
+# Definisi Volume (Persistensi Data)
+volumes:
+  pg_data:
+  broker_data:
