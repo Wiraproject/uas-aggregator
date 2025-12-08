@@ -23,7 +23,7 @@ graph LR
     A -- Pub/Sub (Opsional) --> R[(Redis Broker)]
     T[Tester Service] -- Integration Test --> A
 ```
-
+```
 |    Layanan     |              Teknologi               |                                  Fungsi                              |
 |--- ------------|--------------------------------------|----------------------------------------------------------------------|
 | **Aggregator** | Python (FastAPI), SQLAlchemy (Async) | Core service. Menerima event, validasi, dan deduplikasi ke DB.       |
@@ -31,6 +31,7 @@ graph LR
 | **Storage**    | PostgreSQL 16                        | Database utama. Menyimpan event unik secara persisten.               |
 | **Broker**     | Redis 7                              | Message broker untuk komunikasi internal (opsional/future use).      |
 | **Tester**     | Pytest, HTTPX                        | Layanan khusus untuk menjalankan *Black-box Integration Testing*.    |
+```
 
 ---
 
@@ -39,7 +40,7 @@ graph LR
 Prasyarat
 - Docker & Docker Compose terinstall.
 
-1. Menjalankan Sistem
+### 1. Menjalankan Sistem
 Jalankan perintah berikut di terminal root proyek:
 ```
 docker compose up --build -d
@@ -48,7 +49,7 @@ Setelah dijalankan:
 - Aggregator akan menunggu database siap (retry logic aktif).
 - Publisher akan otomatis mulai mengirim 20.000 event (campuran data baru dan duplikat).
 
-2. Menghentikan Sistem
+### 2. Menghentikan Sistem
 - Data di database tetap tersimpan di volume docker
 ```
 docker compose down
