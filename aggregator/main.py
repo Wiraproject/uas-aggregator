@@ -45,6 +45,11 @@ app = FastAPI(lifespan=lifespan)
 
 # --- ENDPOINTS ---
 
+@app.get("/")
+async def root():
+    """Health check endpoint"""
+    return {"status": "alive", "service": "aggregator"}
+
 @app.post("/publish", status_code=201)
 async def publish_event(event: schemas.EventCreate, db: AsyncSession = Depends(get_db)):
     """
