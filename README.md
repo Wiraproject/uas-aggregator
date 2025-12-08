@@ -24,13 +24,13 @@ graph LR
     T[Tester Service] -- Integration Test --> A
 ```
 ```
-|    Layanan     |              Teknologi               |                                  Fungsi                              |
-|--- ------------|--------------------------------------|----------------------------------------------------------------------|
-| **Aggregator** | Python (FastAPI), SQLAlchemy (Async) | Core service. Menerima event, validasi, dan deduplikasi ke DB.       |
-| **Publisher**  | Python (Requests)                    | Generator traffic. Mengirim 20.000 event dengan rasio duplikasi 30%. |
-| **Storage**    | PostgreSQL 16                        | Database utama. Menyimpan event unik secara persisten.               |
-| **Broker**     | Redis 7                              | Message broker untuk komunikasi internal (opsional/future use).      |
-| **Tester**     | Pytest, HTTPX                        | Layanan khusus untuk menjalankan *Black-box Integration Testing*.    |
+|  Layanan   |              Teknologi               |                                 Fungsi                               |
+|------------|--------------------------------------|----------------------------------------------------------------------|
+| Aggregator | Python (FastAPI), SQLAlchemy (Async) | Core service. Menerima event, validasi, dan deduplikasi ke DB.       |
+| Publisher  | Python (Requests)                    | Generator traffic. Mengirim 20.000 event dengan rasio duplikasi 30%. |
+| Storage    | PostgreSQL 16                        | Database utama. Menyimpan event unik secara persisten.               |
+| Broker     | Redis 7                              | Message broker untuk komunikasi internal (opsional/future use).      |
+| Tester     | Pytest, HTTPX                        | Layanan khusus untuk menjalankan *Black-box Integration Testing*.    |
 ```
 
 ---
