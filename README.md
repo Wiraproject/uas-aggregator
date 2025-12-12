@@ -20,9 +20,13 @@ Sistem terdiri dari 4 layanan yang diorkestrasi oleh Docker Compose:
 
 ```mermaid
 graph LR
-    P[Publisher Service] -- 1. HTTP POST --> A[Aggregator API]
-    A -- 2. Push Queue --> R[(Redis Broker)]
-    A -- 3. Background Worker (Pull) --> R
+    P[Publisher Service] -- 1. HTTP POST --> A[Aggregator Service]
+    
+    subgraph "Hybrid Service"
+    A -- 2. Push (API) --> R[(Redis Broker)]
+    A -- 3. Pop (Worker) --> R
+    end
+    
     A -- 4. Atomic Insert --> D[(Postgres Storage)]
     T[Tester Service] -- Integration Test --> A
 ```
