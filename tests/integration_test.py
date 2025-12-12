@@ -5,7 +5,6 @@ import datetime
 import asyncio
 from httpx import AsyncClient
 
-# URL Aggregator
 BASE_URL = "http://aggregator:8080"
 
 @pytest_asyncio.fixture
@@ -71,7 +70,7 @@ async def test_06_publish_valid_event(client):
     data = get_valid_payload()
     response = await client.post("/publish", json=data)
     assert response.status_code == 202
-    assert response.json()["status"] == "queued" # Perubahan disini
+    assert response.json()["status"] == "queued"
 
 @pytest.mark.asyncio
 async def test_07_publish_complex_payload(client):
@@ -102,39 +101,30 @@ async def test_10_deduplication_logic(client):
     """Test: Kirim 2x. API selalu bilang 'queued', tapi stats harus mencatat duplicate."""
     data = get_valid_payload()
     
-    # Ambil stats awal
     r_stats = await client.get("/stats")
     initial_dupes = r_stats.json()["uptime_stats"]["duplicate_dropped"]
 
-    # Kirim 1
     await client.post("/publish", json=data)
-    # Kirim 2 (Duplikat)
     await client.post("/publish", json=data)
 
-    # Tunggu Worker memproses (PENTING di sistem Async)
     await asyncio.sleep(2)
 
-    # Cek stats akhir
     r_stats_final = await client.get("/stats")
     final_dupes = r_stats_final.json()["uptime_stats"]["duplicate_dropped"]
     
-    # Pastikan dropped bertambah minimal 1
     assert final_dupes > initial_dupes
 
 @pytest.mark.asyncio
 async def test_11_deduplication_same_id_diff_topic(client):
     shared_id = str(uuid.uuid4())
-    # Kirim Topic A & B
     await client.post("/publish", json=get_valid_payload(event_id=shared_id, topic="A"))
     await client.post("/publish", json=get_valid_payload(event_id=shared_id, topic="B"))
     
-    # Tunggu worker
     await asyncio.sleep(2)
     
-    # Cek di events list, harusnya ada 2 event berbeda
     r = await client.get("/events?limit=50")
     events = r.json()
-    # Cari event dengan ID tersebut
+
     found = [e for e in events if e['event_id'] == shared_id]
     assert len(found) >= 2
 
@@ -147,9 +137,13 @@ async def test_12_stats_structure(client):
     response = await client.get("/stats")
     assert response.status_code == 200
     js = response.json()
+    
     assert "uptime_stats" in js
-    # Di hybrid mode, kita punya info queue juga
-    assert "current_queue_depth" in js
+    assert "performance_metrics" in js
+    assert "system_state" in js
+    
+    assert "queue_depth" in js["system_state"]
+    assert "database_rows" in js["system_state"]
 
 @pytest.mark.asyncio
 async def test_13_events_list(client):
@@ -162,7 +156,7 @@ async def test_14_events_filter(client):
     unique_topic = f"filter.{uuid.uuid4()}"
     await client.post("/publish", json=get_valid_payload(topic=unique_topic))
     
-    await asyncio.sleep(1) # Tunggu worker
+    await asyncio.sleep(1)
 
     response = await client.get(f"/events?topic={unique_topic}")
     assert len(response.json()) >= 1

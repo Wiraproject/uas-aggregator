@@ -40,7 +40,6 @@ def run_publisher():
         try:
             is_duplicate = False
             
-            # Logika Duplikasi
             if len(sent_events_history) > 0 and random.random() < DUPLICATION_RATE:
                 event_data = random.choice(sent_events_history)
                 is_duplicate = True

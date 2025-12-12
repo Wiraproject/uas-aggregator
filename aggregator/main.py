@@ -23,15 +23,16 @@ logger = logging.getLogger("aggregator")
 BROKER_URL = os.getenv("BROKER_URL", "redis://broker:6379/0")
 QUEUE_NAME = "events_queue"
 redis_client = None
+worker_task = None
 
 # --- STATISTIK & METRIK ---
-START_TIME = time.time() # Waktu mulai aplikasi
+START_TIME = time.time() 
 
 stats = {
-    "received": 0,          # Total request masuk ke API
-    "unique_processed": 0,  # Berhasil masuk DB
-    "duplicate_dropped": 0, # Ditolak DB
-    "total_latency": 0.0    # Akumulasi waktu (detik) dari Publisher -> DB
+    "received": 0,         
+    "unique_processed": 0,
+    "duplicate_dropped": 0,
+    "total_latency": 0.0 
 }
 
 # --- HELPER DB ---
@@ -49,29 +50,25 @@ async def init_db(retries=5, delay=3):
             await asyncio.sleep(delay)
     raise RuntimeError("Gagal konek ke database.")
 
-# --- WORKER (BACKGROUND TASK) ---
+# --- WORKER ---
 
 async def process_event_in_db(event_data):
     """Worker: Simpan ke DB & Hitung Latency"""
     async with AsyncSessionLocal() as db:
         try:
-            # 1. Hitung Latency (Waktu Proses - Waktu Event Dibuat)
             try:
                 event_ts = datetime.fromisoformat(event_data['timestamp'])
-                # Jika event_ts naive (tidak ada timezone), anggap lokal
                 if event_ts.tzinfo is None:
                     event_ts = event_ts.replace(tzinfo=None)
                 
                 arrival_ts = datetime.now()
                 latency = (arrival_ts - event_ts).total_seconds()
                 
-                # Hindari latency negatif jika jam tidak sinkron sedikit
                 if latency > 0:
                     stats["total_latency"] += latency
             except Exception:
-                pass # Abaikan jika format tanggal salah
+                pass 
 
-            # 2. Simpan ke DB (Atomic Upsert)
             stmt = insert(models.ProcessedEvent).values(
                 topic=event_data['topic'],
                 event_id=event_data['event_id'],
@@ -84,13 +81,11 @@ async def process_event_in_db(event_data):
             result = await db.execute(stmt)
             await db.commit()
             
-            # 3. Update Counter
             if result.rowcount > 0:
                 stats["unique_processed"] += 1
             else:
                 stats["duplicate_dropped"] += 1
                 
-            # Logging Periodik
             total_ops = stats["unique_processed"] + stats["duplicate_dropped"]
             if total_ops % 500 == 0:
                 logger.info(
@@ -127,11 +122,24 @@ async def consume_events():
 # --- LIFECYCLE ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global redis_client
+    global redis_client, worker_task
+    
     await init_db()
+    
     redis_client = redis.from_url(BROKER_URL, decode_responses=True)
-    asyncio.create_task(consume_events())
+    logger.info("Connected to Redis Broker")
+    
+    worker_task = asyncio.create_task(consume_events())
+    
     yield
+
+    if worker_task:
+        worker_task.cancel() 
+        try:
+            await worker_task 
+        except asyncio.CancelledError:
+            pass
+
     if redis_client:
         await redis_client.close()
 
@@ -170,30 +178,24 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
     - Latency (Average ms)
     - Duplicate Rate (%)
     """
-    # 1. Ambil data real dari DB
     result = await db.execute(select(func.count(models.ProcessedEvent.id)))
     db_count = result.scalar()
     
-    # 2. Cek Antrian
     queue_depth = 0
     if redis_client:
         queue_depth = await redis_client.llen(QUEUE_NAME)
 
-    # 3. Kalkulasi Metrik Performa
     uptime_seconds = time.time() - START_TIME
     total_processed_attempts = stats["unique_processed"] + stats["duplicate_dropped"]
     
-    # Throughput (Events/detik yang berhasil diproses worker)
     throughput_eps = 0
     if uptime_seconds > 0:
         throughput_eps = round(total_processed_attempts / uptime_seconds, 2)
         
-    # Average Latency (ms)
     avg_latency_ms = 0
     if total_processed_attempts > 0:
         avg_latency_ms = round((stats["total_latency"] / total_processed_attempts) * 1000, 2)
         
-    # Duplicate Rate (%)
     duplicate_rate_percent = 0
     if total_processed_attempts > 0:
         duplicate_rate_percent = round((stats["duplicate_dropped"] / total_processed_attempts) * 100, 2)
@@ -201,13 +203,13 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
     return {
         "uptime_stats": {
             "received_api": stats["received"],
-            "processed_worker": stats["unique_processed"],
-            "dropped_worker": stats["duplicate_dropped"]
+            "unique_processed": stats["unique_processed"],
+            "duplicate_dropped": stats["duplicate_dropped"]
         },
         "performance_metrics": {
-            "throughput_eps": throughput_eps,           # Events Per Second
-            "avg_latency_ms": avg_latency_ms,           # Rata-rata waktu proses
-            "duplicate_rate_percent": duplicate_rate_percent, # Persentase duplikat
+            "throughput_eps": throughput_eps,
+            "avg_latency_ms": avg_latency_ms,         
+            "duplicate_rate_percent": duplicate_rate_percent,
             "uptime_seconds": round(uptime_seconds, 2)
         },
         "system_state": {
