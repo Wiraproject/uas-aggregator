@@ -1,5 +1,4 @@
 services:
-  # 1. Aggregator: Menerima event HTTP & memproses queue
   aggregator:
     build: ./aggregator
     container_name: uas_aggregator
@@ -14,7 +13,6 @@ services:
     networks:
       - backend-net
 
-  # 2. Publisher: Mengirim event dummy (termasuk duplikat)
   publisher:
     build: ./publisher
     container_name: uas_publisher
@@ -27,18 +25,16 @@ services:
     networks:
       - backend-net
 
-  # 3. Broker: Redis untuk antrian pesan (Pub/Sub atau Queue)
   broker:
     image: redis:7-alpine
     container_name: broker
     ports:
-      - "6379:6379" # Opsional: dibuka host untuk debug, di prod tutup
+      - "6379:6379" 
     volumes:
       - broker_data:/data
     networks:
       - backend-net
 
-  # 4. Storage: Postgres untuk persistensi & deduplikasi
   storage:
     image: postgres:16-alpine
     container_name: storage
@@ -60,12 +56,10 @@ services:
       - backend-net
     profiles: ["testing"]
 
-# Definisi Network (Isolasi)
 networks:
   backend-net:
     driver: bridge
 
-# Definisi Volume (Persistensi Data)
 volumes:
   pg_data:
   broker_data:

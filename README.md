@@ -20,7 +20,7 @@ Sistem terdiri dari 4 layanan yang diorkestrasi oleh Docker Compose:
 graph LR
     P[Publisher Service] -- HTTP POST (Batch/Single) --> A[Aggregator Service]
     A -- Atomic Insert --> D[(Postgres Storage)]
-    A -- Pub/Sub (Opsional) --> R[(Redis Broker)]
+    A -- Pub/Sub --> R[(Redis Broker)]
     T[Tester Service] -- Integration Test --> A
 ```
 ```

@@ -1,7 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional, List, Any
 
-# Model untuk satu Event
 class EventBase(BaseModel):
     topic: str
     event_id: str

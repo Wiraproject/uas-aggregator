@@ -7,5 +7,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Gunakan python -u untuk unbuffered output (log langsung muncul)
 CMD ["python", "-u", "main.py"]

@@ -4,18 +4,16 @@ from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import OperationalError
 from sqlalchemy import select, func
-from sqlalchemy.dialects.postgresql import insert # Khusus Postgres
+from sqlalchemy.dialects.postgresql import insert
 
 from contextlib import asynccontextmanager
 from database import engine, Base, get_db
 import models
 import schemas
 
-# Setup Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("aggregator")
 
-# Statistik In-Memory (Sederhana)
 stats = {
     "received": 0,
     "unique_processed": 0,
@@ -58,7 +56,6 @@ async def publish_event(event: schemas.EventCreate, db: AsyncSession = Depends(g
     """
     stats["received"] += 1
     
-    # 1. Siapkan statement INSERT
     stmt = insert(models.ProcessedEvent).values(
         topic=event.topic,
         event_id=event.event_id,
@@ -67,28 +64,20 @@ async def publish_event(event: schemas.EventCreate, db: AsyncSession = Depends(g
         payload=event.payload
     )
     
-    # 2. Tambahkan klausa ON CONFLICT DO NOTHING
     stmt = stmt.on_conflict_do_nothing(
         index_elements=['topic', 'event_id']
     )
     
-    # 3. Eksekusi
     result = await db.execute(stmt)
     await db.commit()
     
     status_msg = ""
-    # 4. Cek hasil
     if result.rowcount > 0:
         stats["unique_processed"] += 1
         status_msg = "processed"
-        # HAPUS logger per item
     else:
         stats["duplicate_dropped"] += 1
         status_msg = "dropped_duplicate"
-        # HAPUS logger per item
-
-    # LOGGING YANG LEBIH RAPI (Batch Logging)
-    # Hanya print log setiap kelipatan 500 request
     if stats["received"] % 500 == 0:
         logger.info(
             f"STATS UPDATE >> Total: {stats['received']} | "
@@ -115,7 +104,6 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
     Statistik performa.
     Hitung total rows di DB untuk akurasi 'unique_processed' jangka panjang.
     """
-    # Hitung total di DB (source of truth)
     result = await db.execute(select(func.count(models.ProcessedEvent.id)))
     db_count = result.scalar()
     
