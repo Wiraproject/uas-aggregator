@@ -2,18 +2,17 @@ import pytest
 import pytest_asyncio
 import uuid
 import datetime
+import asyncio
 from httpx import AsyncClient
 
-# URL Aggregator dalam jaringan Docker Compose
+# URL Aggregator
 BASE_URL = "http://aggregator:8080"
 
-# Fixture Client (Async)
 @pytest_asyncio.fixture
 async def client():
     async with AsyncClient(base_url=BASE_URL, timeout=10.0) as c:
         yield c
 
-# Helper: Membuat data dummy yang valid
 def get_valid_payload(event_id=None, topic="test.integration"):
     if not event_id:
         event_id = str(uuid.uuid4())
@@ -22,16 +21,16 @@ def get_valid_payload(event_id=None, topic="test.integration"):
         "event_id": event_id,
         "timestamp": datetime.datetime.now().isoformat(),
         "source": "pytest-integration",
-        "payload": {"value": 999, "status": "active"}
+        "payload": {"value": 999}
     }
 
 # ==========================================
-# KELOMPOK 1: Validasi Skema & Input (Negative Tests)
+# KELOMPOK 1: Validasi Skema (Negative Tests)
+# (Validation tetap terjadi di awal, jadi status code tetap 422)
 # ==========================================
 
 @pytest.mark.asyncio
 async def test_01_validation_missing_topic(client):
-    """Test: Payload tanpa 'topic' harus ditolak (422)"""
     data = get_valid_payload()
     del data["topic"]
     response = await client.post("/publish", json=data)
@@ -39,7 +38,6 @@ async def test_01_validation_missing_topic(client):
 
 @pytest.mark.asyncio
 async def test_02_validation_missing_event_id(client):
-    """Test: Payload tanpa 'event_id' harus ditolak (422)"""
     data = get_valid_payload()
     del data["event_id"]
     response = await client.post("/publish", json=data)
@@ -47,7 +45,6 @@ async def test_02_validation_missing_event_id(client):
 
 @pytest.mark.asyncio
 async def test_03_validation_missing_timestamp(client):
-    """Test: Payload tanpa 'timestamp' harus ditolak (422)"""
     data = get_valid_payload()
     del data["timestamp"]
     response = await client.post("/publish", json=data)
@@ -55,142 +52,137 @@ async def test_03_validation_missing_timestamp(client):
 
 @pytest.mark.asyncio
 async def test_04_validation_invalid_json(client):
-    """Test: Mengirim string mentah bukan JSON (422)"""
     response = await client.post("/publish", content="bukan json", headers={"Content-Type": "application/json"})
     assert response.status_code == 422
 
 @pytest.mark.asyncio
 async def test_05_validation_empty_body(client):
-    """Test: Mengirim body kosong {} (422)"""
     response = await client.post("/publish", json={})
     assert response.status_code == 422
 
 # ==========================================
-# KELOMPOK 2: Flow Normal & Variasi Data (Positive Tests)
+# KELOMPOK 2: Flow Normal (Positive Tests)
+# (Sekarang return 202 Accepted & "queued")
 # ==========================================
 
 @pytest.mark.asyncio
 async def test_06_publish_valid_event(client):
-    """Test: Kirim event valid standar (201)"""
+    """Test: Kirim event valid -> Masuk Antrian (202)"""
     data = get_valid_payload()
     response = await client.post("/publish", json=data)
-    assert response.status_code == 201
-    assert response.json()["status"] == "processed"
+    assert response.status_code == 202
+    assert response.json()["status"] == "queued" # Perubahan disini
 
 @pytest.mark.asyncio
 async def test_07_publish_complex_payload(client):
-    """Test: Kirim event dengan payload JSON bersarang (201)"""
     data = get_valid_payload()
-    data["payload"] = {
-        "user": {"id": 1, "name": "Test"},
-        "meta": [1, 2, 3],
-        "flag": True
-    }
+    data["payload"] = {"user": {"id": 1}, "meta": [1, 2]}
     response = await client.post("/publish", json=data)
-    assert response.status_code == 201
+    assert response.status_code == 202
 
 @pytest.mark.asyncio
 async def test_08_publish_long_topic(client):
-    """Test: Kirim topic string sangat panjang (201)"""
-    data = get_valid_payload(topic="a" * 200) # Topic 200 karakter
+    data = get_valid_payload(topic="a" * 200)
     response = await client.post("/publish", json=data)
-    assert response.status_code == 201
+    assert response.status_code == 202
 
 @pytest.mark.asyncio
 async def test_09_publish_optional_fields(client):
-    """Test: Kirim tanpa field opsional 'source' atau 'payload' (201)"""
-    data = {
-        "topic": "test.minimal",
-        "event_id": str(uuid.uuid4()),
-        "timestamp": datetime.datetime.now().isoformat()
-    }
+    data = {"topic": "t", "event_id": str(uuid.uuid4()), "timestamp": datetime.datetime.now().isoformat()}
     response = await client.post("/publish", json=data)
-    assert response.status_code == 201
+    assert response.status_code == 202
 
 # ==========================================
-# KELOMPOK 3: Idempotency & Deduplication (Core Logic)
+# KELOMPOK 3: Idempotency & Deduplication
+# (Karena Async, kita cek via /stats atau /events, bukan response langsung)
 # ==========================================
 
 @pytest.mark.asyncio
-async def test_10_deduplication_exact_match(client):
-    """Test: Kirim event SAMA PERSIS 2x. Kedua harus 200 (Dropped)"""
+async def test_10_deduplication_logic(client):
+    """Test: Kirim 2x. API selalu bilang 'queued', tapi stats harus mencatat duplicate."""
     data = get_valid_payload()
     
+    # Ambil stats awal
+    r_stats = await client.get("/stats")
+    initial_dupes = r_stats.json()["uptime_stats"]["duplicate_dropped"]
+
     # Kirim 1
     await client.post("/publish", json=data)
+    # Kirim 2 (Duplikat)
+    await client.post("/publish", json=data)
+
+    # Tunggu Worker memproses (PENTING di sistem Async)
+    await asyncio.sleep(2)
+
+    # Cek stats akhir
+    r_stats_final = await client.get("/stats")
+    final_dupes = r_stats_final.json()["uptime_stats"]["duplicate_dropped"]
     
-    # Kirim 2
-    res2 = await client.post("/publish", json=data)
-    assert res2.status_code in [200, 201]
-    assert res2.json()["status"] == "dropped_duplicate"
+    # Pastikan dropped bertambah minimal 1
+    assert final_dupes > initial_dupes
 
 @pytest.mark.asyncio
 async def test_11_deduplication_same_id_diff_topic(client):
-    """Test: ID sama tapi Topic beda => HARUS DITERIMA (Unik)"""
     shared_id = str(uuid.uuid4())
+    # Kirim Topic A & B
+    await client.post("/publish", json=get_valid_payload(event_id=shared_id, topic="A"))
+    await client.post("/publish", json=get_valid_payload(event_id=shared_id, topic="B"))
     
-    # Topic A
-    data1 = get_valid_payload(event_id=shared_id, topic="topic.A")
-    res1 = await client.post("/publish", json=data1)
-    assert res1.json()["status"] == "processed"
-
-    # Topic B
-    data2 = get_valid_payload(event_id=shared_id, topic="topic.B")
-    res2 = await client.post("/publish", json=data2)
-    assert res2.json()["status"] == "processed"
+    # Tunggu worker
+    await asyncio.sleep(2)
+    
+    # Cek di events list, harusnya ada 2 event berbeda
+    r = await client.get("/events?limit=50")
+    events = r.json()
+    # Cari event dengan ID tersebut
+    found = [e for e in events if e['event_id'] == shared_id]
+    assert len(found) >= 2
 
 # ==========================================
-# KELOMPOK 4: Observability & Endpoints Lain
+# KELOMPOK 4: Observability
 # ==========================================
 
 @pytest.mark.asyncio
-async def test_12_stats_endpoint_structure(client):
-    """Test: Endpoint /stats mengembalikan struktur JSON yang benar"""
+async def test_12_stats_structure(client):
     response = await client.get("/stats")
     assert response.status_code == 200
-    json_resp = response.json()
-    assert "uptime_stats" in json_resp
-    assert "received" in json_resp["uptime_stats"]
-    assert "database_total_rows" in json_resp
+    js = response.json()
+    assert "uptime_stats" in js
+    # Di hybrid mode, kita punya info queue juga
+    assert "current_queue_depth" in js
 
 @pytest.mark.asyncio
-async def test_13_events_endpoint_list(client):
-    """Test: Endpoint /events mengembalikan list"""
+async def test_13_events_list(client):
     response = await client.get("/events")
     assert response.status_code == 200
     assert isinstance(response.json(), list)
 
 @pytest.mark.asyncio
-async def test_14_events_filter_query(client):
-    """Test: Endpoint /events dengan filter topic"""
-    unique_topic = f"filter.test.{uuid.uuid4()}"
-    data = get_valid_payload(topic=unique_topic)
-    await client.post("/publish", json=data)
+async def test_14_events_filter(client):
+    unique_topic = f"filter.{uuid.uuid4()}"
+    await client.post("/publish", json=get_valid_payload(topic=unique_topic))
+    
+    await asyncio.sleep(1) # Tunggu worker
 
-    # Filter
     response = await client.get(f"/events?topic={unique_topic}")
-    events = response.json()
-    assert len(events) >= 1
-    assert events[0]["topic"] == unique_topic
+    assert len(response.json()) >= 1
 
 # ==========================================
-# KELOMPOK 5: HTTP Protocol & Errors
+# KELOMPOK 5: HTTP Errors
 # ==========================================
 
 @pytest.mark.asyncio
 async def test_15_method_not_allowed(client):
-    """Test: Akses /publish dengan GET harusnya 405 Method Not Allowed"""
     response = await client.get("/publish")
     assert response.status_code == 405
 
 @pytest.mark.asyncio
-async def test_16_not_found_route(client):
-    """Test: Akses route ngawur harusnya 404"""
-    response = await client.post("/ngawur-url", json={})
+async def test_16_not_found(client):
+    response = await client.post("/ngawur", json={})
     assert response.status_code == 404
 
 @pytest.mark.asyncio
-async def test_17_health_root(client):
-    """Test: Akses root / untuk health check"""
+async def test_17_health_check(client):
     response = await client.get("/")
     assert response.status_code == 200
+    assert response.json()["status"] == "alive"

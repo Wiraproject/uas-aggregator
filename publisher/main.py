@@ -7,7 +7,7 @@ import datetime
 import sys
 
 TARGET_URL = os.getenv("TARGET_URL", "http://aggregator:8080/publish")
-DELAY = float(os.getenv("DELAY", "0.005"))
+DELAY = float(os.getenv("DELAY", "0.01"))
 DUPLICATION_RATE = float(os.getenv("DUPLICATION_RATE", "0.3")) 
 MAX_EVENTS = int(os.getenv("MAX_EVENTS", "20000"))
 

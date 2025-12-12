@@ -1,17 +1,17 @@
 services:
   aggregator:
-    build: ./aggregator
-    container_name: uas_aggregator
-    depends_on:
-      - broker
-      - storage
-    environment:
-      - DATABASE_URL=postgresql://user:password@storage:5432/events_db
-      - BROKER_URL=redis://broker:6379/0
-    ports:
-      - "8080:8080"
-    networks:
-      - backend-net
+      build: ./aggregator
+      container_name: uas_aggregator
+      depends_on:
+        - broker
+        - storage
+      environment:
+        - DATABASE_URL=postgresql+asyncpg://user:password@storage:5432/events_db
+        - BROKER_URL=redis://broker:6379/0
+      ports:
+        - "8080:8080"
+      networks:
+        - backend-net
 
   publisher:
     build: ./publisher
@@ -22,6 +22,7 @@ services:
       - TARGET_URL=http://aggregator:8080/publish
       - DELAY=0.01         
       - DUPLICATION_RATE=0.3
+      - MAX_EVENTS=20000
     networks:
       - backend-net
 
