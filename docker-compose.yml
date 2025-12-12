@@ -20,7 +20,7 @@ services:
       - aggregator
     environment:
       - TARGET_URL=http://aggregator:8080/publish
-      - DELAY=0.01         
+      - DELAY=0     
       - DUPLICATION_RATE=0.3
       - MAX_EVENTS=20000
     networks:

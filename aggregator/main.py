@@ -23,7 +23,7 @@ logger = logging.getLogger("aggregator")
 BROKER_URL = os.getenv("BROKER_URL", "redis://broker:6379/0")
 QUEUE_NAME = "events_queue"
 redis_client = None
-worker_task = None
+worker_tasks = []
 
 # --- STATISTIK & METRIK ---
 START_TIME = time.time() 
@@ -129,16 +129,17 @@ async def lifespan(app: FastAPI):
     redis_client = redis.from_url(BROKER_URL, decode_responses=True)
     logger.info("Connected to Redis Broker")
     
-    worker_task = asyncio.create_task(consume_events())
+    for i in range(5):
+        task = asyncio.create_task(consume_events())
+        worker_tasks.append(task)
     
     yield
 
-    if worker_task:
-        worker_task.cancel() 
-        try:
-            await worker_task 
-        except asyncio.CancelledError:
-            pass
+    for task in worker_tasks:
+        task.cancel()
+
+    if worker_tasks:
+        await asyncio.gather(*worker_tasks, return_exceptions=True)
 
     if redis_client:
         await redis_client.close()
