@@ -138,3 +138,11 @@ Melihat statistik performa dan deduplikasi.
     }
   }
   ```
+
+  ---
+
+# 👤 Author
+#### Wiranto (Wira)
+#### 📍 Institut Teknologi Kalimantan
+#### Youtube : youtube.com/watch?si=eCJECqlepAxaRVwd&v=0Vthak9lGCE&feature=youtu.be
+#### 📧 github.com/Wiraproject

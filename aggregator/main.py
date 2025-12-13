@@ -51,7 +51,6 @@ async def init_db(retries=5, delay=3):
     raise RuntimeError("Gagal konek ke database.")
 
 # --- WORKER ---
-
 async def process_event_in_db(event_data):
     """Worker: Simpan ke DB & Hitung Latency"""
     async with AsyncSessionLocal() as db:
@@ -147,7 +146,6 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # --- ENDPOINTS ---
-
 @app.get("/")
 async def root():
     return {"status": "alive", "service": "aggregator"}
